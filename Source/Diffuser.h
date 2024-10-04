@@ -17,7 +17,7 @@ struct Diffuser {
         circularBuffer.setSize(channels, cLength);
     }
 
-    void mapToMultichannel(juce::AudioBuffer<float>& Originalbuff, juce::AudioBuffer<float>& Multibuff) {
+    /*void mapToMultichannel(juce::AudioBuffer<float>& Originalbuff, juce::AudioBuffer<float>& Multibuff) {
         auto total_channels = circularBuffer.getNumChannels();
         auto size = Originalbuff.getNumSamples();
         auto cSize = circularBuffer.getNumSamples();
@@ -25,12 +25,11 @@ struct Diffuser {
             int original_channel = channels % total_channels;
            Multibuff.copyFromWithRamp(channels, 0, Originalbuff.getReadPointer(original_channel), size, .5f, .5f);
         }
-    }
+    }*/
 
     void fillCBuff(juce::AudioBuffer<float>& buff) {
 
         auto total_channels = circularBuffer.getNumChannels();
-        auto original_channels = buff.getNumChannels();
         auto size = buff.getNumSamples();
         auto cSize = circularBuffer.getNumSamples();
 
@@ -83,8 +82,50 @@ struct Diffuser {
 
     }
 
-    void updateWritePos(int pos) {
-        write_pos = pos;
+    void copyCBuff(juce::AudioBuffer<float>& buffer, int bufferSize, int dBufferSize) {
+
+        //jassert(circularBuffer.getNumSamples() == (buffer.getNumSamples() * 2));
+        
+        auto channels = buffer.getNumChannels();
+        const float gainDivisor = 4.f;
+
+        for (int channel = 0; channel < channels; channel++) {
+
+            auto readPosition = write_pos - (10000 * channels);
+            if (readPosition < 0)
+                readPosition += dBufferSize;
+
+            if (readPosition + bufferSize < dBufferSize)
+            {
+                buffer.addFromWithRamp(channel  , 0, circularBuffer.getReadPointer(channel, readPosition), bufferSize, gainDivisor, gainDivisor);
+            }
+
+            else {
+                auto numSamplesToEnd = dBufferSize - readPosition;
+                buffer.addFromWithRamp(channel, 0, circularBuffer.getReadPointer(channel, readPosition), numSamplesToEnd, gainDivisor, gainDivisor);
+
+                auto numSamplesAtStart = bufferSize - numSamplesToEnd;
+                buffer.addFromWithRamp(channel, numSamplesToEnd, circularBuffer.getReadPointer(channel, 0), numSamplesAtStart, gainDivisor, gainDivisor);
+            }
+
+        }
+        
+
+    }
+    
+    void diffuseBuffer(juce::AudioBuffer<float>& buffer) {
+
+        auto size = buffer.getNumSamples();
+        auto delaySize = circularBuffer.getNumSamples();
+        fillCBuff(buffer);
+        copyCBuff(buffer, size, delaySize);
+
+        updateWritePos(size, delaySize);
+
+    }
+    void updateWritePos(int size, int delaySize) {
+        write_pos += size;
+        write_pos %= delaySize;
     }
     juce::AudioBuffer<float> circularBuffer;
     int write_pos{ 0 };
