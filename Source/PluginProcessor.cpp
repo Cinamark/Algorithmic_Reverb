@@ -114,6 +114,8 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::prepareToPlay (double sampleRate
             }
         }
     }
+
+    diffuse.prepare(sampleRate, MULTICHANNEL_TOTAL_INPUTS, samplesPerBlock);
 }
 
 void Reverb_Plugin_Colon_BracketAudioProcessor::releaseResources()
@@ -161,24 +163,26 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::processBlock(juce::AudioBuffer<f
 
     auto bufferSize = buffer.getNumSamples();
     auto dBufferSize = delayBuffer.getNumSamples();
-    auto mBufferSize = multibuffer.getNumSamples();
+    
 
     multibuffer.clear();
     for (int channels = 0; channels < MULTICHANNEL_TOTAL_INPUTS; channels++) {
         int original_channel = channels % getTotalNumInputChannels();
         multibuffer.copyFromWithRamp(channels, 0, buffer.getReadPointer(original_channel), bufferSize, .5f, .5f);
     }
-
+    auto mBufferSize = multibuffer.getNumSamples();
     for (int channel = 0; channel < MULTICHANNEL_TOTAL_INPUTS; ++channel)
     {
-
-        fillBuffer(multibuffer, bufferSize, dBufferSize, channel);
+        diffuse.diffuseBuffer(multibuffer, channel);
+        /*fillBuffer(multibuffer, bufferSize, dBufferSize, channel);
         readFromBuffer(buffer, delayBuffer, channel, bufferSize, dBufferSize);
-        fillBuffer(multibuffer, bufferSize, dBufferSize, channel);
+        fillBuffer(multibuffer, bufferSize, dBufferSize, channel);*/
+        int original_channel = channel % getTotalNumInputChannels();
+        buffer.copyFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
     }
-    write_pos += bufferSize;
-    write_pos %= dBufferSize;
-
+    //write_pos += bufferSize;
+    //write_pos %= dBufferSize;
+    diffuse.updateWritePos(mBufferSize);
     //buffer.applyGain(2);
 }
 void Reverb_Plugin_Colon_BracketAudioProcessor::readFromBuffer(juce::AudioBuffer<float>& buffer, juce::AudioBuffer<float>& dBuffer, int channel, int bufferSize, int dBufferSize) {

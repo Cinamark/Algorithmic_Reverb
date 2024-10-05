@@ -11,7 +11,7 @@
 #include <JuceHeader.h>
 #include "Diffuser.h"
 
-const int MULTICHANNEL_TOTAL_INPUTS = 4;
+const int MULTICHANNEL_TOTAL_INPUTS = 2;
 const int MATRIX_SIZE = 4;
 //==============================================================================
 /**
