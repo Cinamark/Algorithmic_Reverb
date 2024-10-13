@@ -10,8 +10,12 @@
 
 #include <JuceHeader.h>
 #include "Diffuser.h"
+#include "DelayLine.h"
+#include "FDN.h"
+#include "Params.h"
 
-const int MULTICHANNEL_TOTAL_INPUTS = 2;
+
+const int MULTICHANNEL_TOTAL_INPUTS = 8;
 const int MATRIX_SIZE = 4;
 //==============================================================================
 /**
@@ -61,12 +65,20 @@ private:
     juce::AudioBuffer<float> delayBuffer;
     juce::AudioBuffer<float> multibuffer;
     void fillBuffer(juce::AudioBuffer<float>& buffer, int bufferSize, int dBufferSize, int channel);
+    float msToSamples(float ms);
     void readFromBuffer(juce::AudioBuffer<float>& buffer, juce::AudioBuffer<float>& delayBuffer, int channel, int bufferSize, int dBufferSize);
-    juce::dsp::Matrix<float> householderMatrix{ juce::dsp::Matrix<float>(MATRIX_SIZE, MATRIX_SIZE) };
-    juce::dsp::Matrix<float> inputMatrix{ juce::dsp::Matrix<float>(MATRIX_SIZE, MATRIX_SIZE) };
-    juce::dsp::Matrix<float> outputMatrix{ juce::dsp::Matrix<float>(MATRIX_SIZE, MATRIX_SIZE) };
     int write_pos{ 0 };
+
+    Diffuser< MULTICHANNEL_TOTAL_INPUTS > diffuse;
+    FDN< MULTICHANNEL_TOTAL_INPUTS > fdn;
+
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::AudioProcessorValueTreeState apvts{ *this, nullptr, "Parameters", createParameterLayout() };
+    std::vector<params::RAP*> parameters;
+
+    juce::Random rand;
+    std::array<int, MULTICHANNEL_TOTAL_INPUTS> rands_array;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Reverb_Plugin_Colon_BracketAudioProcessor)
 
-    Diffuser diffuse;
+    
 };

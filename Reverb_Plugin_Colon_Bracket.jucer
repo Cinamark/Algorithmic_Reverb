@@ -5,6 +5,9 @@
               jucerFormatVersion="1" companyName="CinaMark">
   <MAINGROUP id="t4j2Jk" name="Reverb_Plugin_Colon_Bracket">
     <GROUP id="{BDA62FA7-FEBF-8F81-52FA-CA9BF13D5258}" name="Source">
+      <FILE id="QCzjtm" name="Params.h" compile="0" resource="0" file="Source/Params.h"/>
+      <FILE id="jaWtle" name="FDN.h" compile="0" resource="0" file="Source/FDN.h"/>
+      <FILE id="VPsP2l" name="DelayLine.h" compile="0" resource="0" file="Source/DelayLine.h"/>
       <FILE id="U5v803" name="Diffuser.h" compile="0" resource="0" file="Source/Diffuser.h"/>
       <FILE id="jomAdQ" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>

@@ -10,121 +10,100 @@
 
 #pragma once
 #include <JuceHeader.h>
+#include "DelayLine.h"
 
-struct Diffuser {
-    void prepare(int sampleRate, int channels, int samplesExpected) {
-        auto cLength = static_cast<int>(sampleRate) * 2;
-        circularBuffer.setSize(channels, cLength);
-    }
+template<typename Sample, int size>
+class Hadamard {
+public:
+    static inline void recursiveUnscaled(Sample* data) {
+        if (size <= 1) return;
+        constexpr int hSize = size / 2;
 
-    void mapToMultichannel(juce::AudioBuffer<float>& Originalbuff, juce::AudioBuffer<float>& Multibuff) {
-        auto total_channels = circularBuffer.getNumChannels();
-        auto size = Originalbuff.getNumSamples();
-        auto cSize = circularBuffer.getNumSamples();
-        for (int channels = 0; channels < total_channels; channels++) {
-            int original_channel = channels % total_channels;
-           Multibuff.copyFromWithRamp(channels, 0, Originalbuff.getReadPointer(original_channel), size, .5f, .5f);
+        // Two (unscaled) Hadamards of half the size
+        Hadamard<Sample, hSize>::recursiveUnscaled(data);
+        Hadamard<Sample, hSize>::recursiveUnscaled(data + hSize);
+
+        // Combine the two halves using sum/difference
+        for (int i = 0; i < hSize; ++i) {
+            double a = data[i];
+            double b = data[i + hSize];
+            data[i] = (a + b);
+            data[i + hSize] = (a - b);
         }
     }
 
-    void fillCBuff(juce::AudioBuffer<float>& buff, int channels) {
+    static inline void inPlace(Sample* data) {
+        recursiveUnscaled(data);
 
-        auto total_channels = circularBuffer.getNumChannels();
-        auto original_channels = buff.getNumChannels();
-        auto size = buff.getNumSamples();
-        auto cSize = circularBuffer.getNumSamples();
-
-            auto* channelData = buff.getWritePointer(channels);
-            if (cSize > size + write_pos)
-            {
-                circularBuffer.copyFromWithRamp(channels, write_pos, channelData, size, .1f, .1f);
-            }
-            else
-            {
-                auto numSamplesToEnd = cSize - write_pos;
-                circularBuffer.copyFromWithRamp(channels, write_pos, channelData, numSamplesToEnd, .1f, .1f);
-
-                auto numSamplesAtStart = size - numSamplesToEnd;
-                circularBuffer.copyFromWithRamp(channels, 0, channelData + numSamplesToEnd, numSamplesAtStart, .1f, .1f);
-            }
+        Sample scalingFactor = std::sqrt(1.0 / size);
+        for (int c = 0; c < size; ++c) {
+            data[c] *= scalingFactor;
+        }
+    }
+};
+template<size_t NumChannels>
+class Diffuser {
+public:
+    void prepareDelayLine(int sampleRate, int channels, int delay) {
+        delayLine.prepare(sampleRate, channels);
         
-
     }
 
-    void readCBuff(juce::AudioBuffer<float>& buffer, int channels, int bufferSize, int dBufferSize) {
+    void setDelay(int delay) {
+        delayLine.setDelay(delay);
+    }
 
-        jassert(circularBuffer.getNumSamples() == (buffer.getNumSamples() * 2));
-        auto readPosition = write_pos - (3000 * channels + 1);
-
-        const float gainDivisor = 4.f;
-
-        if (readPosition < 0)
-            readPosition += dBufferSize;
- 
-        for (int channel = 0; channels < channels; channel++) {
-            if (readPosition + bufferSize < dBufferSize)
-            {
-                buffer.addFromWithRamp(channel  , 0, circularBuffer.getReadPointer(channel, readPosition), bufferSize, gainDivisor, gainDivisor);
+    void diffuseBuffer(juce::AudioBuffer<float>& buffer, std::array<int, NumChannels> delayOffset) {
+        auto size = buffer.getNumSamples();
+        auto* data = buffer.getArrayOfWritePointers();
+        int channels = buffer.getNumChannels();
+        for (int index = 0; index < size; index++) {
+            for (size_t i = 0; i < channels; ++i) {
+                m_scratchBuffer[i] = m_feedbackBuffer[i] = delayLine.popSample(i, index, delayOffset[i]);
             }
 
-            else {
-                auto numSamplesToEnd = dBufferSize - readPosition;
-                buffer.addFromWithRamp(channel, 0, circularBuffer.getReadPointer(channel, readPosition), numSamplesToEnd, gainDivisor, gainDivisor);
-
-                auto numSamplesAtStart = bufferSize - numSamplesToEnd;
-                buffer.addFromWithRamp(channel, numSamplesToEnd, circularBuffer.getReadPointer(channel, 0), numSamplesAtStart, gainDivisor, gainDivisor);
+            for (size_t i = 0; i < channels; i++) {
+                if (isPrime(i)) {
+                    m_feedbackBuffer[i] *= -1;
+                }
+                
             }
 
+            Hadamard<float, NumChannels>::inPlace(m_feedbackBuffer.data());
+
+
+            for (size_t i = 0; i < channels; ++i) {
+                
+
+                data[i][index] = m_feedbackBuffer[i];
+            }
         }
         
 
     }
 
-    void copyCBuff(juce::AudioBuffer<float>& buffer, int bufferSize, int dBufferSize, int channel) {
-
-        //jassert(circularBuffer.getNumSamples() == (buffer.getNumSamples() * 2));
-        
-        auto channels = buffer.getNumChannels();
-        const float gainDivisor = 4.f;
-
-
-            auto readPosition = write_pos - (44100 / (channels-channel));
-            if (readPosition < 0)
-                readPosition += dBufferSize;
-
-            if (readPosition + bufferSize < dBufferSize)
-            {
-                buffer.copyFromWithRamp(channel  , 0, circularBuffer.getReadPointer(channel, readPosition), bufferSize, gainDivisor, gainDivisor);
-            }
-
-            else {
-                auto numSamplesToEnd = dBufferSize - readPosition;
-                buffer.copyFromWithRamp(channel, 0, circularBuffer.getReadPointer(channel, readPosition), numSamplesToEnd, gainDivisor, gainDivisor);
-
-                auto numSamplesAtStart = bufferSize - numSamplesToEnd;
-                buffer.copyFromWithRamp(channel, numSamplesToEnd, circularBuffer.getReadPointer(channel, 0), numSamplesAtStart, gainDivisor, gainDivisor);
-            }
-
-
-        
-
+    void fillDelayBuff(juce::AudioBuffer<float>& buff, int channels) {
+        delayLine.fillCBuff(buff);
     }
     
-    void diffuseBuffer(juce::AudioBuffer<float>& buffer, int channel) {
+    bool isPrime(int num) {
 
-        auto size = buffer.getNumSamples();
-        auto delaySize = circularBuffer.getNumSamples();
-        fillCBuff(buffer, channel);
-        copyCBuff(buffer, size, delaySize, channel);
+        if (num == 0 || num == 1) {
+            return false;
+        }
+        for (int i = 1; i < num; i++) {
+            if (num % i == 0 && i != 1) {
+                return false;
+            }
+        }
 
-
-
+        return true;
     }
-    void updateWritePos(int size) {
-        auto delaySize = circularBuffer.getNumSamples();
-        write_pos += size;
-        write_pos %= delaySize;
+    void updateWrite(int size) {
+        delayLine.updateWritePos(size);
     }
-    juce::AudioBuffer<float> circularBuffer;
-    int write_pos{ 0 };
+
+private: 
+    DelayLine delayLine;
+    std::array<float, NumChannels> m_feedbackBuffer, m_scratchBuffer;
 };

@@ -22,12 +22,28 @@ Reverb_Plugin_Colon_BracketAudioProcessor::Reverb_Plugin_Colon_BracketAudioProce
                        )
 #endif
 {
+    for (auto i = 0; i < params::NumParams; ++i) {
+        auto pid = static_cast<params::PID>(i);
+        parameters.push_back(apvts.getParameter(params::toID(pid)));
+    }
+
+
 }
 
 Reverb_Plugin_Colon_BracketAudioProcessor::~Reverb_Plugin_Colon_BracketAudioProcessor()
 {
 }
 
+inline void createParameter(juce::AudioProcessorValueTreeState::ParameterLayout& layout, params::PID pid, juce::NormalisableRange<float> range, float initVal) {
+    layout.add(std::make_unique<AudioParameterFloat>(params::toID(pid), params::toString(pid), range, initVal));
+}
+juce::AudioProcessorValueTreeState::ParameterLayout  Reverb_Plugin_Colon_BracketAudioProcessor::createParameterLayout() {
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    
+    using Range = juce::NormalisableRange<float>;
+    createParameter(layout, params::PID::RoomSize, Range(20, 600), 50);
+    return layout;
+}
 //==============================================================================
 const juce::String Reverb_Plugin_Colon_BracketAudioProcessor::getName() const
 {
@@ -95,27 +111,18 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::prepareToPlay (double sampleRate
 {
 
 
-    auto dBuffSize = sampleRate * 2.0f;
-    delayBuffer.setSize(MULTICHANNEL_TOTAL_INPUTS, static_cast<int>(dBuffSize));
-    delayBuffer.clear();
+    //auto dBuffSize = sampleRate * 2.0f;
+    //delayBuffer.setSize(MULTICHANNEL_TOTAL_INPUTS, static_cast<int>(dBuffSize));
+    //delayBuffer.clear();
     multibuffer.setSize(MULTICHANNEL_TOTAL_INPUTS, samplesPerBlock);
     multibuffer.clear();
-    outputMatrix.clear();
 
+    fdn.prepareDelayLine(sampleRate, MULTICHANNEL_TOTAL_INPUTS);
+    diffuse.prepareDelayLine(sampleRate, MULTICHANNEL_TOTAL_INPUTS, 4000);
 
-    // setting householder matrix
-    for (int i = 0; i < MATRIX_SIZE; i++) {
-        for (int j = 0; j < MATRIX_SIZE; j++) {
-            if (i == j) {
-                householderMatrix(i, j) = -.5;
-            }
-            else {
-                householderMatrix(i, j) = .5;
-            }
-        }
+    for (size_t i = 0; i < rands_array.size(); ++i) {
+        rands_array[i] = rand.getSystemRandom().nextInt(100);
     }
-
-    diffuse.prepare(sampleRate, MULTICHANNEL_TOTAL_INPUTS, samplesPerBlock);
 }
 
 void Reverb_Plugin_Colon_BracketAudioProcessor::releaseResources()
@@ -165,49 +172,80 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::processBlock(juce::AudioBuffer<f
     auto dBufferSize = delayBuffer.getNumSamples();
     
 
-    multibuffer.clear();
+
     for (int channels = 0; channels < MULTICHANNEL_TOTAL_INPUTS; channels++) {
         int original_channel = channels % getTotalNumInputChannels();
         multibuffer.copyFromWithRamp(channels, 0, buffer.getReadPointer(original_channel), bufferSize, .5f, .5f);
     }
     auto mBufferSize = multibuffer.getNumSamples();
+    
+    diffuse.fillDelayBuff(multibuffer, MULTICHANNEL_TOTAL_INPUTS);
+    diffuse.setDelay(4000);
+    diffuse.diffuseBuffer(multibuffer, rands_array);
+    diffuse.diffuseBuffer(multibuffer, rands_array);
+    diffuse.diffuseBuffer(multibuffer, rands_array);
+    diffuse.diffuseBuffer(multibuffer, rands_array);
+    diffuse.diffuseBuffer(multibuffer, rands_array);
+    diffuse.diffuseBuffer(multibuffer, rands_array);
+
+    fdn.fillDelayBuff(multibuffer, MULTICHANNEL_TOTAL_INPUTS);
+
+    const auto RoomSizePID = static_cast<int>(params::PID::RoomSize);
+    const auto delayNorm = parameters[RoomSizePID]->getValue();
+    const auto delay = parameters[RoomSizePID]->getNormalisableRange().convertFrom0to1(delayNorm);
+    fdn.setDelay(msToSamples(delay));
+    auto* multidata = multibuffer.getArrayOfWritePointers();
+    
+    for (int i = 0; i < mBufferSize; ++i) {
+        fdn.process(i, multidata, rands_array);
+    }
+    
     for (int channel = 0; channel < MULTICHANNEL_TOTAL_INPUTS; ++channel)
     {
-        diffuse.diffuseBuffer(multibuffer, channel);
+        
         /*fillBuffer(multibuffer, bufferSize, dBufferSize, channel);
         readFromBuffer(buffer, delayBuffer, channel, bufferSize, dBufferSize);
         fillBuffer(multibuffer, bufferSize, dBufferSize, channel);*/
         int original_channel = channel % getTotalNumInputChannels();
+        /*if (channel < 2) {
+            buffer.copyFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
+        }
+        else if (channel >= 2) {
+            buffer.addFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
+        } */  
+
+        
         buffer.copyFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
+        
     }
-    //write_pos += bufferSize;
-    //write_pos %= dBufferSize;
-    diffuse.updateWritePos(mBufferSize);
+    fdn.updateWrite(mBufferSize);
+    diffuse.updateWrite(mBufferSize);
+    /*write_pos += bufferSize;
+    write_pos %= dBufferSize;
+    diffuse.updateWritePos(mBufferSize);*/
     //buffer.applyGain(2);
+}
+float Reverb_Plugin_Colon_BracketAudioProcessor::msToSamples(float ms) {
+    const auto sampleRate = getSampleRate();
+
+    return (ms * sampleRate) / 1000;
 }
 void Reverb_Plugin_Colon_BracketAudioProcessor::readFromBuffer(juce::AudioBuffer<float>& buffer, juce::AudioBuffer<float>& dBuffer, int channel, int bufferSize, int dBufferSize) {
 
-    auto readPosition = write_pos - (5000 + (3000*channel+1));
+    auto readPosition = write_pos - (5000 + (3000*channel));
 
     const float gainDivisor = 4.f;
 
     if (readPosition < 0)
         readPosition += dBufferSize;
 
-   auto* dataArr = dBuffer.getArrayOfWritePointers();
-   for (int i = 0; i < MATRIX_SIZE; i++) {
-        for (int j = 0; j < MATRIX_SIZE; j++) {
-            inputMatrix(i, j) = dataArr[j][readPosition];
-        }
-    }
+    auto* dataArr = dBuffer.getArrayOfWritePointers();
+   
+    /*for (int l = 0; l < buffer.getNumSamples(); ++l) {
+        Householder<float, 4>::inPlace(dataArr, l);
+    }*/
 
-    outputMatrix = inputMatrix * householderMatrix;
-
-    for (int i = 0; i < MATRIX_SIZE; i++) {
-        for (int j = 0; j < MATRIX_SIZE; j++) {
-            dataArr[j][readPosition] = outputMatrix(i, j);
-        }
-    }
+    
     int original_channel = channel % getNumInputChannels();
     if (readPosition + bufferSize < dBufferSize)
     {
@@ -221,6 +259,23 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::readFromBuffer(juce::AudioBuffer
         auto numSamplesAtStart = bufferSize - numSamplesToEnd;
         buffer.addFromWithRamp(original_channel, numSamplesToEnd, delayBuffer.getReadPointer(channel, 0), numSamplesAtStart, gainDivisor, gainDivisor);
     }
+
+    
+    /*for (int l = 0; l < buffer.getNumSamples(); ++l) {
+        for (int i = 0; i < MATRIX_SIZE; i++) {
+            for (int j = 0; j < MATRIX_SIZE; j++) {
+                inputMatrix(i, j) = dataArr[j][l];
+            }
+        }
+
+        outputMatrix = inputMatrix * householderMatrix;
+
+        for (int i = 0; i < MATRIX_SIZE; i++) {
+            for (int j = 0; j < MATRIX_SIZE; j++) {
+                dataArr[j][l] = outputMatrix(i, j);
+            }
+        }
+    }*/
 
     for (int channels = 0; channels < MULTICHANNEL_TOTAL_INPUTS; channels++) {
         int original_channel = channels % getTotalNumInputChannels();
