@@ -16,6 +16,7 @@
 
 
 const int MULTICHANNEL_TOTAL_INPUTS = 8;
+const int DIFFUSION_STEPS = 5;
 const int MATRIX_SIZE = 4;
 //==============================================================================
 /**
@@ -64,12 +65,13 @@ private:
     //==============================================================================
     juce::AudioBuffer<float> delayBuffer;
     juce::AudioBuffer<float> multibuffer;
+    juce::AudioBuffer<float> multiFeedbackBuffer;
     void fillBuffer(juce::AudioBuffer<float>& buffer, int bufferSize, int dBufferSize, int channel);
     float msToSamples(float ms);
     void readFromBuffer(juce::AudioBuffer<float>& buffer, juce::AudioBuffer<float>& delayBuffer, int channel, int bufferSize, int dBufferSize);
     int write_pos{ 0 };
 
-    Diffuser< MULTICHANNEL_TOTAL_INPUTS > diffuse;
+    std::array<Diffuser< MULTICHANNEL_TOTAL_INPUTS, DIFFUSION_STEPS>, DIFFUSION_STEPS> diffuse;
     FDN< MULTICHANNEL_TOTAL_INPUTS > fdn;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -80,5 +82,5 @@ private:
     std::array<int, MULTICHANNEL_TOTAL_INPUTS> rands_array;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Reverb_Plugin_Colon_BracketAudioProcessor)
 
-    
+    juce::IIRFilter lowPassFilters[MULTICHANNEL_TOTAL_INPUTS];
 };

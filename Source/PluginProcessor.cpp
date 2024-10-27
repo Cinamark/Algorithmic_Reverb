@@ -42,6 +42,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout  Reverb_Plugin_Colon_Bracket
     
     using Range = juce::NormalisableRange<float>;
     createParameter(layout, params::PID::RoomSize, Range(20, 600), 50);
+    createParameter(layout, params::PID::Decay, Range(0, 1), .8);
+    createParameter(layout, params::PID::EarlyReflections, Range(0, 1), .5);
     return layout;
 }
 //==============================================================================
@@ -110,18 +112,26 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::changeProgramName (int index, co
 void Reverb_Plugin_Colon_BracketAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
 
-
-    //auto dBuffSize = sampleRate * 2.0f;
-    //delayBuffer.setSize(MULTICHANNEL_TOTAL_INPUTS, static_cast<int>(dBuffSize));
-    //delayBuffer.clear();
     multibuffer.setSize(MULTICHANNEL_TOTAL_INPUTS, samplesPerBlock);
+    multiFeedbackBuffer.setSize(MULTICHANNEL_TOTAL_INPUTS, samplesPerBlock);
+    multiFeedbackBuffer.clear();
     multibuffer.clear();
 
     fdn.prepareDelayLine(sampleRate, MULTICHANNEL_TOTAL_INPUTS);
-    diffuse.prepareDelayLine(sampleRate, MULTICHANNEL_TOTAL_INPUTS, 4000);
+    
 
+    for (int i = 0; i < DIFFUSION_STEPS; ++i) {
+        diffuse[i].prepareDelayLine(sampleRate, MULTICHANNEL_TOTAL_INPUTS);
+
+    }
     for (size_t i = 0; i < rands_array.size(); ++i) {
-        rands_array[i] = rand.getSystemRandom().nextInt(100);
+        int lower = (5000 / MULTICHANNEL_TOTAL_INPUTS)*i;
+        int upper = (5000 / MULTICHANNEL_TOTAL_INPUTS)*(i+1);
+        rands_array[i] = rand.getSystemRandom().nextInt(juce::Range<int>(lower, upper));
+    }
+
+    for (int channel = 0; channel < MULTICHANNEL_TOTAL_INPUTS; ++channel) {
+        lowPassFilters[channel].setCoefficients(juce::IIRCoefficients::makeLowPass(sampleRate, 5000));
     }
 }
 
@@ -168,58 +178,74 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::processBlock(juce::AudioBuffer<f
         buffer.clear(i, 0, buffer.getNumSamples());
 
 
-    auto bufferSize = buffer.getNumSamples();
-    auto dBufferSize = delayBuffer.getNumSamples();
-    
-
-
+    auto bufferSize = buffer.getNumSamples();;
     for (int channels = 0; channels < MULTICHANNEL_TOTAL_INPUTS; channels++) {
         int original_channel = channels % getTotalNumInputChannels();
-        multibuffer.copyFromWithRamp(channels, 0, buffer.getReadPointer(original_channel), bufferSize, .5f, .5f);
+        multibuffer.copyFromWithRamp(channels, 0, buffer.getReadPointer(original_channel), bufferSize, .8f, .8f);
     }
     auto mBufferSize = multibuffer.getNumSamples();
     
-    diffuse.fillDelayBuff(multibuffer, MULTICHANNEL_TOTAL_INPUTS);
-    diffuse.setDelay(4000);
-    diffuse.diffuseBuffer(multibuffer, rands_array);
-    diffuse.diffuseBuffer(multibuffer, rands_array);
-    diffuse.diffuseBuffer(multibuffer, rands_array);
-    diffuse.diffuseBuffer(multibuffer, rands_array);
-    diffuse.diffuseBuffer(multibuffer, rands_array);
-    diffuse.diffuseBuffer(multibuffer, rands_array);
+    
+    
 
-    fdn.fillDelayBuff(multibuffer, MULTICHANNEL_TOTAL_INPUTS);
+
+    multiFeedbackBuffer.clear();
+    for (int i = 0; i < DIFFUSION_STEPS; ++i) {
+        diffuse[i].fillDelayBuff(multibuffer, MULTICHANNEL_TOTAL_INPUTS);
+        diffuse[i].setDelay(msToSamples(20)*i);
+        diffuse[i].diffuseBuffer(multibuffer, rands_array, i);
+
+
+        const float diffuseGain = 0.9 - (i * 0.1);
+        for (int i = 0; i < MULTICHANNEL_TOTAL_INPUTS; ++i) {
+            //lowPassFilters[i].processSamples(multibuffer.getWritePointer(i), mBufferSize);
+            multiFeedbackBuffer.addFromWithRamp(i, 0, multibuffer.getReadPointer(i), bufferSize, diffuseGain, diffuseGain);
+        }
+
+
+    }
+
+
+    fdn.fillDelayBuff(multiFeedbackBuffer, MULTICHANNEL_TOTAL_INPUTS);
 
     const auto RoomSizePID = static_cast<int>(params::PID::RoomSize);
     const auto delayNorm = parameters[RoomSizePID]->getValue();
     const auto delay = parameters[RoomSizePID]->getNormalisableRange().convertFrom0to1(delayNorm);
     fdn.setDelay(msToSamples(delay));
-    auto* multidata = multibuffer.getArrayOfWritePointers();
+
+
+
+    const auto decayPID = static_cast<int>(params::PID::Decay);
+    const auto decayNorm = parameters[decayPID]->getValue();
+    const auto decay = parameters[decayPID]->getNormalisableRange().convertFrom0to1(decayNorm);
+    fdn.setDecay(decay);
+
+    const auto earlyRefPID = static_cast<int>(params::PID::EarlyReflections);
+    const auto earlyRefNorm = parameters[earlyRefPID]->getValue();
+    const auto earlyRef = parameters[earlyRefPID]->getNormalisableRange().convertFrom0to1(earlyRefNorm);
+
+    auto* multidata = multiFeedbackBuffer.getArrayOfWritePointers();
     
     for (int i = 0; i < mBufferSize; ++i) {
         fdn.process(i, multidata, rands_array);
     }
     
+    const auto og_channels = buffer.getNumChannels();
     for (int channel = 0; channel < MULTICHANNEL_TOTAL_INPUTS; ++channel)
     {
         
-        /*fillBuffer(multibuffer, bufferSize, dBufferSize, channel);
-        readFromBuffer(buffer, delayBuffer, channel, bufferSize, dBufferSize);
-        fillBuffer(multibuffer, bufferSize, dBufferSize, channel);*/
-        int original_channel = channel % getTotalNumInputChannels();
-        /*if (channel < 2) {
-            buffer.copyFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
-        }
-        else if (channel >= 2) {
-            buffer.addFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
-        } */  
-
+        int original_channel = channel % og_channels;
         
-        buffer.copyFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
+        
+        buffer.copyFromWithRamp(original_channel, 0, multiFeedbackBuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
+        buffer.addFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, earlyRef, earlyRef);
         
     }
-    fdn.updateWrite(mBufferSize);
-    diffuse.updateWrite(mBufferSize);
+    fdn.updateWrite(buffer.getNumSamples());
+    for (int i = 0; i < DIFFUSION_STEPS; ++i) {
+        diffuse[i].updateWrite(mBufferSize);
+    }
+    
     /*write_pos += bufferSize;
     write_pos %= dBufferSize;
     diffuse.updateWritePos(mBufferSize);*/

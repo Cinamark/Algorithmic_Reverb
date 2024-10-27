@@ -20,6 +20,8 @@ namespace params {
     
     enum class PID {
         RoomSize,
+        Decay,
+        EarlyReflections,
         NumParams
     };
 
@@ -30,6 +32,10 @@ namespace params {
         {
         case PID::RoomSize:
             return "Room Size";
+        case PID::Decay:
+            return "Decay";
+        case PID::EarlyReflections:
+            return "Early Reflections";
         default:
             return "Unkown";
         }

@@ -41,19 +41,23 @@ public:
         }
     }
 };
-template<size_t NumChannels>
+template<size_t NumChannels, int DiffusionSteps>
 class Diffuser {
 public:
-    void prepareDelayLine(int sampleRate, int channels, int delay) {
-        delayLine.prepare(sampleRate, channels);
+    void prepareDelayLine(int sampleRate, int channels) {
+        for (int i = 0; i < DiffusionSteps; ++i) {
+            delayLine.prepare(sampleRate, channels);
+        }
+        
         
     }
 
-    void setDelay(int delay) {
+    void setDelay(float delay) {
         delayLine.setDelay(delay);
+        delayTime = delay;
     }
 
-    void diffuseBuffer(juce::AudioBuffer<float>& buffer, std::array<int, NumChannels> delayOffset) {
+    void diffuseBuffer(juce::AudioBuffer<float>& buffer, std::array<int, NumChannels>& delayOffset, int step) {
         auto size = buffer.getNumSamples();
         auto* data = buffer.getArrayOfWritePointers();
         int channels = buffer.getNumChannels();
@@ -73,9 +77,8 @@ public:
 
 
             for (size_t i = 0; i < channels; ++i) {
-                
-
                 data[i][index] = m_feedbackBuffer[i];
+                //delayLine.pushSample(m_feedbackBuffer[i], i, index);
             }
         }
         
@@ -104,6 +107,7 @@ public:
     }
 
 private: 
-    DelayLine delayLine;
+    AllpassDelayLine delayLine;
     std::array<float, NumChannels> m_feedbackBuffer, m_scratchBuffer;
+    int delayTime;
 };
