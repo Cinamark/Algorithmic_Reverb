@@ -67,6 +67,7 @@ private:
     juce::AudioBuffer<float> multibuffer;
     juce::AudioBuffer<float> multiFeedbackBuffer;
     void fillBuffer(juce::AudioBuffer<float>& buffer, int bufferSize, int dBufferSize, int channel);
+    void downSample(juce::AudioBuffer<float>& buffer, const int ValueID);
     float msToSamples(float ms);
     void readFromBuffer(juce::AudioBuffer<float>& buffer, juce::AudioBuffer<float>& delayBuffer, int channel, int bufferSize, int dBufferSize);
     int write_pos{ 0 };

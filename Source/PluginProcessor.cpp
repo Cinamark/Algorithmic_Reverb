@@ -37,6 +37,9 @@ Reverb_Plugin_Colon_BracketAudioProcessor::~Reverb_Plugin_Colon_BracketAudioProc
 inline void createParameter(juce::AudioProcessorValueTreeState::ParameterLayout& layout, params::PID pid, juce::NormalisableRange<float> range, float initVal) {
     layout.add(std::make_unique<AudioParameterFloat>(params::toID(pid), params::toString(pid), range, initVal));
 }
+inline void createIntParameter(juce::AudioProcessorValueTreeState::ParameterLayout& layout, params::PID pid, int min, int max, float initVal, const juce::String& label) {
+    layout.add(std::make_unique<AudioParameterInt>(params::toID(pid), params::toString(pid), min, max, initVal, "Resample Factor"));
+}
 juce::AudioProcessorValueTreeState::ParameterLayout  Reverb_Plugin_Colon_BracketAudioProcessor::createParameterLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     
@@ -44,6 +47,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout  Reverb_Plugin_Colon_Bracket
     createParameter(layout, params::PID::RoomSize, Range(20, 600), 50);
     createParameter(layout, params::PID::Decay, Range(0, 1), .8);
     createParameter(layout, params::PID::EarlyReflections, Range(0, 1), .5);
+    createParameter(layout, params::PID::DryWet, Range(0, 1), .5);
+    createIntParameter(layout, params::PID::PreResample, 0, 10, 0, "Pre_Resample");
+    createIntParameter(layout, params::PID::FeedbackResample, 0, 10, 0, "Feedback_Resample");
+    createIntParameter(layout, params::PID::PostResample, 0, 10, 0, "Post_Resample");
     return layout;
 }
 //==============================================================================
@@ -185,9 +192,7 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::processBlock(juce::AudioBuffer<f
     }
     auto mBufferSize = multibuffer.getNumSamples();
     
-    
-    
-
+    downSample(multibuffer, static_cast<int>(params::PID::PreResample));
 
     multiFeedbackBuffer.clear();
     for (int i = 0; i < DIFFUSION_STEPS; ++i) {
@@ -205,6 +210,7 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::processBlock(juce::AudioBuffer<f
 
     }
 
+    downSample(multiFeedbackBuffer, static_cast<int>(params::PID::FeedbackResample));
 
     fdn.fillDelayBuff(multiFeedbackBuffer, MULTICHANNEL_TOTAL_INPUTS);
 
@@ -230,17 +236,34 @@ void Reverb_Plugin_Colon_BracketAudioProcessor::processBlock(juce::AudioBuffer<f
         fdn.process(i, multidata, rands_array);
     }
     
+    for (int i = 0; i < MULTICHANNEL_TOTAL_INPUTS; ++i) {
+        multiFeedbackBuffer.addFromWithRamp(i, 0, multibuffer.getReadPointer(i), bufferSize, earlyRef, earlyRef);
+    }
+    
+    const auto DryWetPID = static_cast<int>(params::PID::DryWet);
+    const auto DryWetNorm = parameters[DryWetPID]->getValue();
+    const auto mix = parameters[DryWetPID]->getNormalisableRange().convertFrom0to1(DryWetNorm);
+
     const auto og_channels = buffer.getNumChannels();
     for (int channel = 0; channel < MULTICHANNEL_TOTAL_INPUTS; ++channel)
     {
         
         int original_channel = channel % og_channels;
+        auto* dry = buffer.getReadPointer(original_channel);
+        auto* wet = multiFeedbackBuffer.getReadPointer(channel);
+        auto* output = buffer.getWritePointer(original_channel);
         
+        /*buffer.copyFromWithRamp(original_channel, 0, multiFeedbackBuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
+        buffer.addFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, earlyRef, earlyRef);*/
         
-        buffer.copyFromWithRamp(original_channel, 0, multiFeedbackBuffer.getReadPointer(channel), bufferSize, 1.f, 1.f);
-        buffer.addFromWithRamp(original_channel, 0, multibuffer.getReadPointer(channel), bufferSize, earlyRef, earlyRef);
-        
+        for (int sample = 0; sample < bufferSize; ++sample) {
+            output[sample] = (dry[sample] * (1 - mix)) + (wet[sample] * mix);
+        }
+
     }
+    
+    downSample(buffer, static_cast<int>(params::PID::PostResample));
+
     fdn.updateWrite(buffer.getNumSamples());
     for (int i = 0; i < DIFFUSION_STEPS; ++i) {
         diffuse[i].updateWrite(mBufferSize);
@@ -255,6 +278,36 @@ float Reverb_Plugin_Colon_BracketAudioProcessor::msToSamples(float ms) {
     const auto sampleRate = getSampleRate();
 
     return (ms * sampleRate) / 1000;
+}
+
+void Reverb_Plugin_Colon_BracketAudioProcessor::downSample(juce::AudioBuffer<float>& buffer, const int ValueID) {
+    const auto downSample = parameters[ValueID]->getValue();
+
+    int downsamplingRatio = parameters[ValueID]->getNormalisableRange().convertFrom0to1(downSample);
+    float heldSample = 0.0f;
+
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        auto* channelData = buffer.getWritePointer(channel);
+        int downsampleCounter = 0;
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            if (downsampleCounter == 0)
+            {
+
+                heldSample = channelData[sample];
+                downsampleCounter = downsamplingRatio;
+            }
+            else
+            {
+
+                downsampleCounter--;
+            }
+
+            channelData[sample] = heldSample;
+        }
+    }
 }
 void Reverb_Plugin_Colon_BracketAudioProcessor::readFromBuffer(juce::AudioBuffer<float>& buffer, juce::AudioBuffer<float>& dBuffer, int channel, int bufferSize, int dBufferSize) {
 

@@ -22,6 +22,10 @@ namespace params {
         RoomSize,
         Decay,
         EarlyReflections,
+        PreResample,
+        FeedbackResample,
+        PostResample,
+        DryWet,
         NumParams
     };
 
@@ -36,6 +40,14 @@ namespace params {
             return "Decay";
         case PID::EarlyReflections:
             return "Early Reflections";
+        case PID::PreResample:
+            return "Pre_Down Sample";
+        case PID::FeedbackResample:
+            return "Feedback_Down Sample";
+        case PID::PostResample:
+            return "Post_Down Sample";
+        case PID::DryWet:
+            return "Dry_Wet";
         default:
             return "Unkown";
         }
