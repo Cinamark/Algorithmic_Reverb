@@ -1,4 +1,4 @@
-## Redux Reverb !
+# Redux Reverb !
 
 An algorithmic audio reverb implemented in C++17 using the JUCE framework, based on the reverb architecture proposed by Geraint Luff (Signalsmith) at the Audio Developer Conference 2021.
 
@@ -6,7 +6,7 @@ The project explores algorithmic reverberation, digital signal processing, and r
 
 **Technologies**: C++17 · JUCE · Digital Signal Processing · Real-time Audio
 
-# Outline
+## Outline
 The basic structure of the reverb consists of a feedback delay loop and a diffuser
 <img width="665" height="244" alt="image" src="https://github.com/user-attachments/assets/0237e576-96d9-4f3c-9214-c67a608d7345" />
 
@@ -15,8 +15,8 @@ The length of the delay specifies the decay time while the diffuser simulates th
 
 The design splits the incoming signal into multiple duplicate channels, which are then diffused and delayed until brought back into stereo.
 
-# Build
+## Build
 This project can easily be built using the <a href="https://juce.com/get-juce/">Projucer</a>. The project can be loaded and built by selecting VST3 as the active build target.
 
-# Accompanying Video
+## Accompanying Video
 https://www.youtube.com/watch?v=4YZqfjqW_F8
