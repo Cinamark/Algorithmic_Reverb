@@ -13,10 +13,11 @@ The project explores algorithmic reverberation, digital signal processing, and r
 - **Plugin Format:** VST3
 
 ## Outline
-The reverb architecture consists of a feedback delay network and a diffusion stage. The feedback network generates the decaying reverberation, while the diffusion stage creates a denser, smoother reflection pattern.<br><br><br>
+The reverb architecture consists of a feedback delay network and a diffusion stage. The feedback network generates the decaying reverberation, while the diffusion stage creates a denser, smoother reflection pattern.<br><br>
 <img width="354" height="243" alt="image" src="https://github.com/user-attachments/assets/377fd7db-f6c6-4aad-9d06-1d79e179ad4d" />
+<br>
 <img width="665" height="244" alt="image" src="https://github.com/user-attachments/assets/0237e576-96d9-4f3c-9214-c67a608d7345" />
-<br><br><br>
+<br><br>
 
 The feedback delay network (FDN) determines the time characteristics of the reverberation, with emphasis on its decay behaviour. Moreover, the diffusion stage helps control the density and distribution of reflections, contributing to the perceived characteristics of the "room".
 
